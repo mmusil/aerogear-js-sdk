@@ -36,7 +36,7 @@ export class OfflineLink extends ApolloLink {
     this.networkStatus = options.networkStatus;
 
     this.queue = new OfflineQueue(options);
-
+    this.forwardOnOnline();
     // TODO call offlineQueue restore method
   }
 
@@ -44,7 +44,7 @@ export class OfflineLink extends ApolloLink {
     const enqueuedWhenOffline = isMarkedOffline(operation);
     if (enqueuedWhenOffline) {
       // Operation was processed before and needs to be enqueued again
-      this.queue.enqueue(operation);
+      this.queue.enqueue(operation, forward);
       return new Observable(observer => {
         const optimisticResponse = operation.getContext().optimisticResponse;
         return () => { return; };
@@ -55,7 +55,7 @@ export class OfflineLink extends ApolloLink {
       return forward(operation);
     }
     markOffline(operation);
-    this.queue.enqueue(operation);
+    this.queue.enqueue(operation, forward);
 
     return new Observable(observer => {
       const optimisticResponse = operation.getContext().optimisticResponse;
@@ -63,4 +63,17 @@ export class OfflineLink extends ApolloLink {
     });
   }
 
+  private async forwardOnOnline() {
+    this.online = !(await this.networkStatus.isOffline());
+    const queue = this.queue;
+    const self = this;
+    this.networkStatus.onStatusChangeListener({
+      onStatusChange(networkInfo: NetworkInfo) {
+        self.online = networkInfo.online;
+        if (self.online) {
+          queue.forwardOperations();
+        }
+      }
+    });
+}
 }
